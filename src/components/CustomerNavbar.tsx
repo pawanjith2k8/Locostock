@@ -3,39 +3,28 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useUser, PRESET_LOCATIONS } from '@/context/UserContext';
+import { useUser } from '@/context/UserContext';
 import { 
   Store, 
   Search, 
   MapPin, 
   ShoppingBag, 
-  SlidersHorizontal,
-  Compass,
   ArrowRightLeft,
   Clock
 } from 'lucide-react';
 
 export default function CustomerNavbar() {
   const pathname = usePathname();
-  const { customerLocation, setCustomerLocation, radiusKm, setRadiusKm, switchRole } = useUser();
+  const { customerArea, setCustomerArea, switchRole } = useUser();
+  const [navAreaInput, setNavAreaInput] = React.useState(customerArea || '');
 
-  const handleGeolocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          setCustomerLocation({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            name: 'Current Location (GPS)',
-          });
-        },
-        err => {
-          alert('Could not retrieve browser geolocation: ' + err.message);
-        }
-      );
-    } else {
-      alert('Geolocation is not supported by your browser.');
-    }
+  React.useEffect(() => {
+    setNavAreaInput(customerArea || '');
+  }, [customerArea]);
+
+  const handleNavAreaSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCustomerArea(navAreaInput);
   };
 
   return (
@@ -79,53 +68,40 @@ export default function CustomerNavbar() {
             </div>
           </Link>
 
-          {/* Quick Location & Radius Selector Pill */}
+          {/* Manual Area Search Input Pill */}
           <div className="hidden lg:flex items-center gap-2 bg-[#1B241F] hover:bg-[#232E27] px-3 py-1.5 rounded-full border border-[#303D34] text-xs transition">
             <MapPin className="w-3.5 h-3.5 text-[#22C55E] shrink-0" />
-            <select
-              value={customerLocation.name}
-              onChange={e => {
-                const found = PRESET_LOCATIONS.find(loc => loc.name === e.target.value);
-                if (found) setCustomerLocation(found);
-              }}
-              className="bg-transparent font-medium text-[#F5F7F5] outline-none cursor-pointer text-xs"
-            >
-              {PRESET_LOCATIONS.map(loc => (
-                <option key={loc.name} value={loc.name} className="bg-[#1B241F] text-[#F5F7F5]">
-                  {loc.name}
-                </option>
-              ))}
-              {customerLocation.name === 'Current Location (GPS)' && (
-                <option value="Current Location (GPS)" className="bg-[#1B241F] text-[#F5F7F5]">
-                  Current Location (GPS)
-                </option>
+            <form onSubmit={handleNavAreaSubmit} className="flex items-center gap-1.5">
+              <span className="text-[#A1ADA5] text-[11px] font-medium">Area:</span>
+              <input
+                type="text"
+                value={navAreaInput}
+                onChange={e => setNavAreaInput(e.target.value)}
+                placeholder="Enter area (e.g. Tambaram)..."
+                className="bg-transparent font-medium text-[#F5F7F5] outline-none text-xs w-44 placeholder-[#A1ADA5]/60"
+              />
+              {navAreaInput.trim() !== customerArea && (
+                <button
+                  type="submit"
+                  className="text-[10px] bg-[#22C55E] text-[#101512] font-bold px-2 py-0.5 rounded hover:bg-[#16A34A] transition"
+                >
+                  Set
+                </button>
               )}
-            </select>
-
-            <button
-              onClick={handleGeolocation}
-              title="Use current GPS location"
-              className="p-0.5 hover:bg-[#1B241F] rounded-full text-[#A1ADA5] hover:text-[#34D399] transition"
-            >
-              <Compass className="w-3.5 h-3.5" />
-            </button>
-
-            <span className="text-[#303D34]">|</span>
-
-            <div className="flex items-center gap-1 text-[#A1ADA5]">
-              <span className="text-[11px]">Radius:</span>
-              <select
-                value={radiusKm}
-                onChange={e => setRadiusKm(Number(e.target.value))}
-                className="bg-transparent font-bold text-[#34D399] outline-none cursor-pointer text-xs"
+            </form>
+            {customerArea && (
+              <button
+                type="button"
+                onClick={() => {
+                  setNavAreaInput('');
+                  setCustomerArea('');
+                }}
+                title="Clear area filter"
+                className="text-[#A1ADA5] hover:text-[#F5F7F5] text-xs px-1"
               >
-                <option value={2} className="bg-[#1B241F] text-[#F5F7F5]">2 km</option>
-                <option value={5} className="bg-[#1B241F] text-[#F5F7F5]">5 km</option>
-                <option value={10} className="bg-[#1B241F] text-[#F5F7F5]">10 km</option>
-                <option value={25} className="bg-[#1B241F] text-[#F5F7F5]">25 km</option>
-                <option value={50} className="bg-[#1B241F] text-[#F5F7F5]">50 km</option>
-              </select>
-            </div>
+                ×
+              </button>
+            )}
           </div>
 
           {/* Navigation Links */}

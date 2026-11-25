@@ -117,16 +117,16 @@ export default function ShopkeeperShopProfilePage() {
           <Store className="w-8 h-8" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-[#F5F7F5]">Supabase Service Not Configured</h2>
+          <h2 className="text-2xl font-bold text-[#F5F7F5]">Store Profile Offline</h2>
           <p className="text-xs text-[#A1ADA5] max-w-md mx-auto leading-relaxed">
-            Shop profiles and location mapping require active Supabase credentials. Please configure credentials in <code className="text-[#34D399] bg-[#101512] px-1.5 py-0.5 rounded">.env.local</code>.
+            Store profile and location settings are currently unavailable. Please verify your connection or sign in again.
           </p>
         </div>
         <Link
           href="/shopkeeper/login"
           className="inline-flex items-center gap-2 bg-[#232E27] hover:bg-[#303D34] text-[#F5F7F5] font-bold px-6 py-3 rounded-xl transition border border-[#303D34] text-xs sm:text-sm"
         >
-          <span>View Auth Setup</span>
+          <span>Merchant Sign In</span>
           <ArrowRight className="w-4 h-4" />
         </Link>
       </div>

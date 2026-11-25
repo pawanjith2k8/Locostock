@@ -9,6 +9,8 @@ interface UserContextType {
   role: UserRole;
   profile: Profile | null;
   switchRole: (role: UserRole) => void;
+  customerArea: string;
+  setCustomerArea: (area: string) => void;
   customerLocation: {
     lat: number;
     lon: number;
@@ -24,18 +26,54 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export const PRESET_LOCATIONS = [
-  { name: 'Perungudi, Chennai', lat: 12.9654, lon: 80.2461 },
-  { name: 'Thoraipakkam, Chennai', lat: 12.9416, lon: 80.2337 },
-  { name: 'Velachery, Chennai', lat: 12.9759, lon: 80.2212 },
-  { name: 'Adyar, Chennai', lat: 13.0012, lon: 80.2565 },
-  { name: 'T. Nagar, Chennai', lat: 13.0418, lon: 80.2341 },
+  { name: 'Velachery', lat: 12.9759, lon: 80.2212 },
+  { name: 'Perungudi', lat: 12.9654, lon: 80.2461 },
+  { name: 'Tambaram', lat: 12.9249, lon: 80.1000 },
+  { name: 'Thoraipakkam', lat: 12.9416, lon: 80.2337 },
+  { name: 'Adyar', lat: 13.0012, lon: 80.2565 },
 ];
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
   const [role, setRole] = useState<UserRole>('customer');
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [customerArea, setCustomerAreaState] = useState<string>('');
   const [customerLocation, setCustomerLocation] = useState(PRESET_LOCATIONS[0]);
   const [radiusKm, setRadiusKm] = useState<number>(10);
+
+  useEffect(() => {
+    try {
+      const savedArea = typeof window !== 'undefined' ? localStorage.getItem('locostock_customer_area') : null;
+      if (savedArea) {
+        setCustomerAreaState(savedArea);
+        setCustomerLocation(prev => ({
+          ...prev,
+          name: savedArea,
+        }));
+      }
+    } catch {
+      // LocalStorage access fails safely in strict sandbox
+    }
+  }, []);
+
+  const setCustomerArea = (newArea: string) => {
+    const trimmed = (newArea || '').trim();
+    setCustomerAreaState(trimmed);
+    try {
+      if (typeof window !== 'undefined') {
+        if (trimmed) {
+          localStorage.setItem('locostock_customer_area', trimmed);
+        } else {
+          localStorage.removeItem('locostock_customer_area');
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    setCustomerLocation(prev => ({
+      ...prev,
+      name: trimmed || 'All Areas',
+    }));
+  };
 
   const refreshProfile = useCallback(async () => {
     const p = await getCurrentProfile();
@@ -81,6 +119,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         role,
         profile,
         switchRole,
+        customerArea,
+        setCustomerArea,
         customerLocation,
         setCustomerLocation,
         radiusKm,

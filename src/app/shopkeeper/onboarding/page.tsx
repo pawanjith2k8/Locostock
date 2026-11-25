@@ -115,7 +115,7 @@ export default function ShopkeeperOnboardingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isSupabaseConfigured) {
-      setErrorMsg('Supabase service is not configured yet. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.');
+      setErrorMsg('Authentication service is currently unavailable. Please sign in and try again.');
       return;
     }
 
@@ -173,16 +173,16 @@ export default function ShopkeeperOnboardingPage() {
           <Store className="w-8 h-8" />
         </div>
         <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-[#F5F7F5]">Supabase Service Not Configured</h2>
+          <h2 className="text-2xl font-bold text-[#F5F7F5]">Shop Registration Offline</h2>
           <p className="text-xs text-[#A1ADA5] max-w-md mx-auto leading-relaxed">
-            Shop registration requires an active Supabase database connection. Please configure your credentials in <code className="text-[#34D399] bg-[#101512] px-1.5 py-0.5 rounded">.env.local</code>.
+            Shop registration is currently unavailable. Please verify your connection or sign in again.
           </p>
         </div>
         <Link
           href="/shopkeeper/login"
           className="inline-flex items-center gap-2 bg-[#232E27] hover:bg-[#303D34] text-[#F5F7F5] font-bold px-6 py-3 rounded-xl transition border border-[#303D34] text-xs sm:text-sm"
         >
-          <span>View Auth Setup</span>
+          <span>Merchant Sign In</span>
           <ArrowRight className="w-4 h-4" />
         </Link>
       </div>

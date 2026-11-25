@@ -7,7 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/unit_and_integration.test.mjs tests/security_suite.test.mjs",
+    "test": "node --test tests/unit_and_integration.test.mjs tests/security_suite.test.mjs tests/area_search_and_sync.test.mjs tests/auth_and_redirects.test.mjs",
     "test:security": "node --test tests/security_suite.test.mjs"
   },
   "dependencies": {

@@ -31,11 +31,13 @@ function SearchPageContent() {
   const searchParams = useSearchParams();
   const queryParam = searchParams.get('q') || '';
   const categoryParam = searchParams.get('category') || '';
+  const areaParam = searchParams.get('area') || '';
 
-  const { customerLocation, radiusKm, setRadiusKm } = useUser();
+  const { customerArea, setCustomerArea, customerLocation, radiusKm, setRadiusKm } = useUser();
 
   const [query, setQuery] = useState(queryParam);
   const [category, setCategory] = useState(categoryParam);
+  const [area, setArea] = useState(areaParam || customerArea || '');
   const [minPrice, setMinPrice] = useState<number | undefined>(undefined);
   const [maxPrice, setMaxPrice] = useState<number | undefined>(undefined);
   const [sortBy, setSortBy] = useState<'relevance' | 'distance' | 'price_low' | 'price_high'>('relevance');
@@ -49,7 +51,8 @@ function SearchPageContent() {
   useEffect(() => {
     if (queryParam !== undefined) setQuery(queryParam);
     if (categoryParam !== undefined) setCategory(categoryParam);
-  }, [queryParam, categoryParam]);
+    if (areaParam !== undefined && areaParam !== '') setArea(areaParam);
+  }, [queryParam, categoryParam, areaParam]);
 
   // Execute database search
   useEffect(() => {
@@ -58,13 +61,14 @@ function SearchPageContent() {
       if (query.trim()) {
         addRecentSearch(query.trim());
       }
+      if (area.trim() && area.trim() !== customerArea) {
+        setCustomerArea(area.trim());
+      }
       try {
         const data = await searchProducts({
           query,
           category: category || undefined,
-          customerLat: customerLocation.lat,
-          customerLon: customerLocation.lon,
-          radiusKm,
+          area: area.trim() || undefined,
           minPrice,
           maxPrice,
           onlyInStock,
@@ -78,7 +82,7 @@ function SearchPageContent() {
       }
     }
     loadData();
-  }, [query, category, customerLocation, radiusKm, minPrice, maxPrice, onlyInStock, sortBy]);
+  }, [query, category, area, minPrice, maxPrice, onlyInStock, sortBy]);
 
   const categories = ['Electronics & Hardware', 'Stationery & Books', 'Groceries & Household'];
 
@@ -103,9 +107,14 @@ function SearchPageContent() {
               <span>Product Discovery</span>
             </h1>
             <p className="text-xs text-[#A1ADA5]">
-              Real recorded shop inventory near{' '}
-              <span className="font-semibold text-[#F5F7F5]">{customerLocation.name}</span> within{' '}
-              <span className="font-bold text-[#34D399]">{radiusKm} km</span>
+              {area ? (
+                <>
+                  Showing real in-stock inventory registered in{' '}
+                  <span className="font-bold text-[#34D399]">{area}</span>
+                </>
+              ) : (
+                'Real recorded physical shop inventory across neighborhoods'
+              )}
             </p>
           </div>
 
@@ -139,15 +148,36 @@ function SearchPageContent() {
         {/* Search input & primary controls */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2">
           {/* Query input */}
-          <div className="md:col-span-5 relative">
+          <div className="md:col-span-4 relative">
             <Search className="w-4 h-4 text-[#A1ADA5] absolute left-3.5 top-3.5" />
             <input
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search by product, brand, SKU or model..."
+              placeholder="Search product, brand, SKU..."
               className="w-full pl-10 pr-4 py-2.5 bg-[#1B241F] border border-[#303D34] rounded-xl text-xs sm:text-sm font-medium text-[#F5F7F5] placeholder-[#A1ADA5]/60 outline-none focus:border-[#34D399] transition"
             />
+          </div>
+
+          {/* Area manual input */}
+          <div className="md:col-span-3 relative">
+            <MapPin className="w-4 h-4 text-[#22C55E] absolute left-3.5 top-3.5" />
+            <input
+              type="text"
+              value={area}
+              onChange={e => setArea(e.target.value)}
+              placeholder="Area (e.g. Tambaram)..."
+              className="w-full pl-10 pr-8 py-2.5 bg-[#1B241F] border border-[#303D34] rounded-xl text-xs sm:text-sm font-medium text-[#F5F7F5] placeholder-[#A1ADA5]/60 outline-none focus:border-[#34D399] transition"
+            />
+            {area && (
+              <button
+                type="button"
+                onClick={() => setArea('')}
+                className="absolute right-2.5 top-3 text-[#A1ADA5] hover:text-[#F5F7F5]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {/* Category Selector */}
@@ -167,16 +197,15 @@ function SearchPageContent() {
           </div>
 
           {/* Sort By */}
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as any)}
               className="w-full px-3 py-2.5 bg-[#1B241F] border border-[#303D34] rounded-xl text-xs sm:text-sm font-medium text-[#F5F7F5] outline-none focus:border-[#34D399] transition cursor-pointer"
             >
               <option value="relevance" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Relevance</option>
-              <option value="distance" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Nearest Distance</option>
-              <option value="price_low" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Lowest Price</option>
-              <option value="price_high" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Highest Price</option>
+              <option value="price_low" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Price Low</option>
+              <option value="price_high" className="bg-[#1B241F] text-[#F5F7F5]">Sort: Price High</option>
             </select>
           </div>
 
@@ -314,23 +343,31 @@ function SearchPageContent() {
                 <Search className="w-8 h-8 text-[#A1ADA5]" />
               </div>
               <h3 className="text-lg font-bold text-[#F5F7F5]">
-                {!isSupabaseConfigured ? 'Database Awaiting Configuration' : 'No matching products found'}
+                {!isSupabaseConfigured
+                  ? 'Database Awaiting Configuration'
+                  : area
+                  ? 'No shops found in this area. Try another area.'
+                  : 'No matching products found'}
               </h3>
               <p className="text-xs text-[#A1ADA5] max-w-md mx-auto">
                 {!isSupabaseConfigured
                   ? 'Supabase database credentials have not been configured in .env.local yet. Once configured, real shop inventories will be searchable here.'
-                  : `No verified listings match "${query}" within ${radiusKm} km of ${customerLocation.name}. Try expanding your search radius to 25 km or 50 km.`}
+                  : area
+                  ? `No verified stores or products match "${area}". Try searching another area like Tambaram, Velachery, or Perungudi.`
+                  : query
+                  ? `No verified listings match "${query}". Try searching a different keyword or category.`
+                  : 'No products are currently available. Try clearing your filters or changing the area.'}
               </p>
               {isSupabaseConfigured && (
                 <button
                   onClick={() => {
                     setQuery('');
                     setCategory('');
-                    setRadiusKm(50);
+                    setArea('');
                   }}
                   className="px-5 py-2.5 bg-[#22C55E] text-[#101512] rounded-xl text-xs font-bold hover:bg-[#16A34A] transition shadow-lg shadow-[#22C55E]/20"
                 >
-                  Expand Search to 50 km & Clear Filters
+                  Clear Area & Search Filters
                 </button>
               )}
             </div>

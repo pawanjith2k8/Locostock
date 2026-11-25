@@ -1,98 +1,127 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { 
   Search, 
   MapPin, 
   Store, 
   ShoppingBag, 
-  CheckCircle2, 
-  Clock, 
-  ShieldCheck, 
   ArrowRight, 
-  TrendingUp,
-  Cpu,
-  BookOpen,
-  Apple,
-  Wrench,
-  Navigation,
-  History,
+  CheckCircle2, 
+  Navigation, 
+  History, 
+  TrendingUp, 
+  Cpu, 
+  BookOpen, 
+  Apple, 
+  Clock, 
   X,
-  Compass,
-  SlidersHorizontal
+  AlertCircle
 } from 'lucide-react';
-import { useUser, PRESET_LOCATIONS } from '@/context/UserContext';
-import { searchProducts } from '@/lib/db';
+import { useUser } from '@/context/UserContext';
+import { searchProducts, searchShops } from '@/lib/db';
 import { isSupabaseConfigured } from '@/lib/supabaseClient';
-import { ProductSearchResult } from '@/types';
-import { formatCurrency, formatTimeAgo } from '@/lib/utils';
+import { ProductSearchResult, Shop } from '@/types';
+import { formatCurrency } from '@/lib/utils';
 import { getRecentSearches, addRecentSearch, clearRecentSearches, removeRecentSearch } from '@/lib/searchHistory';
-import { AlertCircle } from 'lucide-react';
 
 export default function CustomerLandingPage() {
   const router = useRouter();
-  const { customerLocation, setCustomerLocation, radiusKm, setRadiusKm } = useUser();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const { customerArea, setCustomerArea } = useUser();
+
+  const [areaInput, setAreaInput] = useState(customerArea || '');
+  const [productQuery, setProductQuery] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const [searchedArea, setSearchedArea] = useState<string>(customerArea || '');
+  const [matchingShops, setMatchingShops] = useState<Array<{ shop: Shop; distanceKm?: number }>>([]);
   const [featuredProducts, setFeaturedProducts] = useState<ProductSearchResult[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Sync areaInput with customerArea from context
+  useEffect(() => {
+    if (customerArea && !areaInput) {
+      setAreaInput(customerArea);
+      setSearchedArea(customerArea);
+    }
+  }, [customerArea]);
+
+  // Load directory data (shops and products) matching the searched area
   useEffect(() => {
     setRecentSearches(getRecentSearches());
 
-    async function loadFeatured() {
+    async function loadDirectoryData() {
       setLoading(true);
       try {
-        const results = await searchProducts({
-          customerLat: customerLocation.lat,
-          customerLon: customerLocation.lon,
-          radiusKm,
-          onlyInStock: true,
-          sortBy: 'relevance',
-        });
-        setFeaturedProducts(results.slice(0, 6));
+        const [shopsResult, productsResult] = await Promise.all([
+          searchShops({
+            area: searchedArea || undefined,
+          }),
+          searchProducts({
+            area: searchedArea || undefined,
+            onlyInStock: true,
+            sortBy: 'relevance',
+          }),
+        ]);
+        setMatchingShops(shopsResult);
+        setFeaturedProducts(productsResult);
       } catch (err) {
-        console.error('Error loading featured products:', err);
+        console.error('Error loading discovery directory:', err);
       } finally {
         setLoading(false);
       }
     }
-    loadFeatured();
-  }, [customerLocation, radiusKm]);
 
-  const handleGeolocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => {
-          setCustomerLocation({
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            name: 'Current Location (GPS)',
-          });
-        },
-        err => {
-          alert('Could not retrieve browser GPS: ' + err.message);
-        }
-      );
+    loadDirectoryData();
+  }, [searchedArea]);
+
+  const handleAreaSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanArea = areaInput.trim();
+    const cleanProd = productQuery.trim();
+
+    if (!cleanArea && !cleanProd) {
+      setValidationError('Please enter an area name to search (e.g., Tambaram, Velachery, Perungudi).');
+      return;
+    }
+
+    setValidationError(null);
+
+    if (cleanArea) {
+      setCustomerArea(cleanArea);
+      setSearchedArea(cleanArea);
+      addRecentSearch(cleanArea);
+    }
+
+    if (cleanProd) {
+      addRecentSearch(cleanProd);
+      router.push(`/search?q=${encodeURIComponent(cleanProd)}${cleanArea ? `&area=${encodeURIComponent(cleanArea)}` : ''}`);
     }
   };
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = searchQuery.trim();
-    if (clean) {
-      addRecentSearch(clean);
-      router.push(`/search?q=${encodeURIComponent(clean)}`);
-    } else {
-      router.push('/search');
-    }
+  const handleSelectQuickArea = (areaName: string) => {
+    setAreaInput(areaName);
+    setCustomerArea(areaName);
+    setSearchedArea(areaName);
+    setValidationError(null);
+    addRecentSearch(areaName);
+  };
+
+  const handleClearArea = () => {
+    setAreaInput('');
+    setCustomerArea('');
+    setSearchedArea('');
+    setValidationError(null);
   };
 
   const executeRecentSearch = (query: string) => {
     addRecentSearch(query);
-    router.push(`/search?q=${encodeURIComponent(query)}`);
+    setAreaInput(query);
+    setCustomerArea(query);
+    setSearchedArea(query);
   };
 
   const handleRemoveRecent = (e: React.MouseEvent, query: string) => {
@@ -127,7 +156,7 @@ export default function CustomerLandingPage() {
             </div>
           )}
 
-          {/* Exact Hero Heading Required: "Find What You Need. Shop Locally." */}
+          {/* Hero Heading */}
           <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#F5F7F5]">
             Find What You Need.{' '}
             <span className="text-[#34D399]">Shop Locally.</span>
@@ -135,80 +164,56 @@ export default function CustomerLandingPage() {
 
           {/* Short Supporting Description */}
           <p className="text-xs sm:text-sm text-[#A1ADA5] max-w-xl mx-auto font-normal leading-relaxed">
-            Discover real in-stock inventory recorded by neighborhood stores. Compare prices, check availability timestamps, and get directions before you step out.
+            Enter your neighborhood or area to discover verified physical stores and real-time in-stock products. No GPS tracking required.
           </p>
 
-          {/* One Coherent Search Interface */}
+          {/* Manual Area-Based Search Interface */}
           <form
-            onSubmit={handleSearchSubmit}
+            onSubmit={handleAreaSearchSubmit}
             className="mt-6 bg-[#1B241F] rounded-2xl border border-[#303D34] p-1.5 shadow-2xl flex flex-col md:flex-row items-stretch md:items-center max-w-3xl mx-auto divide-y md:divide-y-0 md:divide-x divide-[#303D34] focus-within:border-[#34D399]/60 transition-colors"
           >
-            {/* 1. Location Selector + Current GPS Button */}
-            <div className="flex items-center gap-2 px-3 py-2.5 min-w-[200px]">
+            {/* 1. Manual Area Input */}
+            <div className="flex items-center gap-2 px-3 py-2.5 min-w-[240px] flex-1">
               <MapPin className="w-4 h-4 text-[#22C55E] shrink-0" />
-              <select
-                value={customerLocation.name}
+              <input
+                type="text"
+                value={areaInput}
                 onChange={e => {
-                  const loc = PRESET_LOCATIONS.find(l => l.name === e.target.value);
-                  if (loc) setCustomerLocation(loc);
+                  setAreaInput(e.target.value);
+                  if (validationError) setValidationError(null);
                 }}
-                className="bg-transparent text-xs font-semibold text-[#F5F7F5] outline-none w-full cursor-pointer border-0 p-0"
-              >
-                {PRESET_LOCATIONS.map(l => (
-                  <option key={l.name} value={l.name} className="bg-[#1B241F] text-[#F5F7F5]">
-                    {l.name}
-                  </option>
-                ))}
-                {customerLocation.name === 'Current Location (GPS)' && (
-                  <option value="Current Location (GPS)" className="bg-[#1B241F] text-[#F5F7F5]">
-                    Current Location (GPS)
-                  </option>
-                )}
-              </select>
-              <button
-                type="button"
-                onClick={handleGeolocation}
-                title="Use current GPS location"
-                className="p-1 hover:bg-[#232E27] rounded-lg text-[#A1ADA5] hover:text-[#34D399] transition"
-              >
-                <Compass className="w-3.5 h-3.5" />
-              </button>
+                placeholder="Enter area (e.g. Tambaram, Velachery)..."
+                className="w-full bg-transparent outline-none text-xs sm:text-sm text-[#F5F7F5] placeholder-[#A1ADA5]/60 border-0 p-0 font-medium"
+              />
+              {areaInput && (
+                <button
+                  type="button"
+                  onClick={handleClearArea}
+                  className="text-[#A1ADA5] hover:text-[#F5F7F5] p-1 text-xs"
+                  title="Clear area"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            {/* 2. Product Search Field */}
+            {/* 2. Optional Product Keyword */}
             <div className="flex-1 flex items-center gap-2 px-3 py-2.5">
               <Search className="w-4 h-4 text-[#A1ADA5] shrink-0" />
               <input
                 type="text"
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                placeholder='Search "Arduino Uno", "Notebook", "Basmati"...'
+                value={productQuery}
+                onChange={e => setProductQuery(e.target.value)}
+                placeholder='Product (e.g. "Arduino", "Notebook")...'
                 className="w-full bg-transparent outline-none text-xs sm:text-sm text-[#F5F7F5] placeholder-[#A1ADA5]/60 border-0 p-0"
               />
             </div>
 
-            {/* 3. Radius Selector */}
-            <div className="flex items-center gap-1.5 px-3 py-2.5 text-[#A1ADA5] text-xs">
-              <SlidersHorizontal className="w-3.5 h-3.5 text-[#22C55E]" />
-              <span className="text-[11px] hidden sm:inline">Radius:</span>
-              <select
-                value={radiusKm}
-                onChange={e => setRadiusKm(Number(e.target.value))}
-                className="bg-transparent font-bold text-[#34D399] outline-none cursor-pointer border-0 p-0"
-              >
-                <option value={2} className="bg-[#1B241F] text-[#F5F7F5]">2 km</option>
-                <option value={5} className="bg-[#1B241F] text-[#F5F7F5]">5 km</option>
-                <option value={10} className="bg-[#1B241F] text-[#F5F7F5]">10 km</option>
-                <option value={25} className="bg-[#1B241F] text-[#F5F7F5]">25 km</option>
-                <option value={50} className="bg-[#1B241F] text-[#F5F7F5]">50 km</option>
-              </select>
-            </div>
-
-            {/* 4. Search Button */}
+            {/* 3. Search Button */}
             <div className="p-1">
               <button
                 type="submit"
-                className="w-full md:w-auto bg-[#22C55E] hover:bg-[#16A34A] text-[#101512] font-black px-5 py-2.5 rounded-xl transition flex items-center justify-center gap-2 text-xs sm:text-sm shadow-md"
+                className="w-full md:w-auto bg-[#22C55E] hover:bg-[#16A34A] text-[#101512] font-black px-6 py-2.5 rounded-xl transition flex items-center justify-center gap-2 text-xs sm:text-sm shadow-md"
               >
                 <span>Search</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -216,25 +221,53 @@ export default function CustomerLandingPage() {
             </div>
           </form>
 
+          {/* Validation Error Message */}
+          {validationError && (
+            <div className="max-w-md mx-auto p-2.5 bg-[#2A1515] border border-[#7F1D1D] rounded-xl text-xs text-[#F87171] flex items-center gap-2 justify-center font-semibold animate-shake">
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#EF4444]" />
+              <span>{validationError}</span>
+            </div>
+          )}
+
+          {/* Quick Area Filter Pills */}
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+            <span className="text-[11px] text-[#A1ADA5] font-medium mr-1">Popular areas:</span>
+            {['Tambaram', 'Velachery', 'Perungudi', 'Thoraipakkam', 'Adyar'].map(locName => (
+              <button
+                key={locName}
+                type="button"
+                onClick={() => handleSelectQuickArea(locName)}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold border transition ${
+                  searchedArea.toLowerCase() === locName.toLowerCase()
+                    ? 'bg-[#22C55E] text-[#101512] border-[#22C55E] font-bold shadow-sm'
+                    : 'bg-[#1B241F] hover:bg-[#232E27] text-[#F5F7F5] border-[#303D34] hover:border-[#34D399]/40'
+                }`}
+              >
+                <MapPin className="w-3 h-3 text-[#34D399]" />
+                <span>{locName}</span>
+              </button>
+            ))}
+          </div>
+
           {/* Quick Categories Bar */}
-          <div className="flex flex-wrap items-center justify-center gap-2 pt-3">
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
             <span className="text-[11px] text-[#A1ADA5] font-medium mr-1">Browse categories:</span>
             <Link
-              href="/search?category=Electronics%20%26%20Hardware"
+              href={`/search?category=Electronics%20%26%20Hardware${searchedArea ? `&area=${encodeURIComponent(searchedArea)}` : ''}`}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1B241F] hover:bg-[#232E27] text-[11px] font-semibold text-[#F5F7F5] border border-[#303D34] hover:border-[#34D399]/40 transition"
             >
               <Cpu className="w-3 h-3 text-[#34D399]" />
               <span>Electronics & Hardware</span>
             </Link>
             <Link
-              href="/search?category=Stationery%20%26%20Books"
+              href={`/search?category=Stationery%20%26%20Books${searchedArea ? `&area=${encodeURIComponent(searchedArea)}` : ''}`}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1B241F] hover:bg-[#232E27] text-[11px] font-semibold text-[#F5F7F5] border border-[#303D34] hover:border-[#34D399]/40 transition"
             >
               <BookOpen className="w-3 h-3 text-[#34D399]" />
               <span>Stationery & Books</span>
             </Link>
             <Link
-              href="/search?category=Groceries%20%26%20Household"
+              href={`/search?category=Groceries%20%26%20Household${searchedArea ? `&area=${encodeURIComponent(searchedArea)}` : ''}`}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#1B241F] hover:bg-[#232E27] text-[11px] font-semibold text-[#F5F7F5] border border-[#303D34] hover:border-[#34D399]/40 transition"
             >
               <Apple className="w-3 h-3 text-[#34D399]" />
@@ -244,11 +277,11 @@ export default function CustomerLandingPage() {
         </div>
       </section>
 
-      {/* Clean Navigation Section: Search Products, Browse Shops, History */}
+      {/* Navigation Shortcuts: Search Products, Browse Shops, History */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link
-            href="/search"
+            href={searchedArea ? `/search?area=${encodeURIComponent(searchedArea)}` : '/search'}
             className="bg-[#151C18] hover:bg-[#1B241F] p-4 rounded-2xl border border-[#303D34] hover:border-[#34D399]/40 transition flex items-center justify-between group shadow-sm"
           >
             <div className="flex items-center gap-3">
@@ -264,7 +297,7 @@ export default function CustomerLandingPage() {
           </Link>
 
           <Link
-            href="/shops"
+            href={searchedArea ? `/shops?area=${encodeURIComponent(searchedArea)}` : '/shops'}
             className="bg-[#151C18] hover:bg-[#1B241F] p-4 rounded-2xl border border-[#303D34] hover:border-[#34D399]/40 transition flex items-center justify-between group shadow-sm"
           >
             <div className="flex items-center gap-3">
@@ -273,7 +306,7 @@ export default function CustomerLandingPage() {
               </div>
               <div>
                 <span className="font-bold text-sm text-[#F5F7F5] block">Browse Shops</span>
-                <span className="text-[11px] text-[#A1ADA5]">Nearby verified store directory</span>
+                <span className="text-[11px] text-[#A1ADA5]">Verified physical store directory</span>
               </div>
             </div>
             <ArrowRight className="w-4 h-4 text-[#A1ADA5] group-hover:text-[#34D399] transition-colors" />
@@ -336,21 +369,140 @@ export default function CustomerLandingPage() {
         </section>
       )}
 
-      {/* Live Available Products Section */}
+      {/* Section: Matching Shops in Area */}
+      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg sm:text-xl font-bold text-[#F5F7F5] flex items-center gap-2">
+              <Store className="w-4 h-4 text-[#22C55E]" />
+              <span>
+                {searchedArea ? `Registered Shops in ${searchedArea}` : 'Registered Local Shops'}
+              </span>
+            </h2>
+            <p className="text-xs text-[#A1ADA5]">
+              {searchedArea
+                ? `Physical stores operating in ${searchedArea}`
+                : 'Browse neighborhood stores or enter your locality above'}
+            </p>
+          </div>
+
+          <Link
+            href={searchedArea ? `/shops?area=${encodeURIComponent(searchedArea)}` : '/shops'}
+            className="text-xs font-bold text-[#34D399] hover:underline inline-flex items-center gap-1 self-start sm:self-auto"
+          >
+            <span>Browse All Shops</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map(n => (
+              <div key={n} className="bg-[#1B241F] rounded-2xl border border-[#303D34] h-44 animate-pulse p-4 space-y-3">
+                <div className="h-6 bg-[#232E27] rounded w-1/3"></div>
+                <div className="h-4 bg-[#232E27] rounded w-3/4"></div>
+                <div className="h-4 bg-[#232E27] rounded w-1/2"></div>
+              </div>
+            ))}
+          </div>
+        ) : matchingShops.length === 0 ? (
+          <div className="bg-[#151C18] p-8 rounded-2xl border border-[#303D34] text-center space-y-3">
+            <Store className="w-10 h-10 text-[#A1ADA5] mx-auto" />
+            <h3 className="text-sm font-bold text-[#F5F7F5]">
+              {searchedArea
+                ? 'No shops found in this area. Try another area.'
+                : !isSupabaseConfigured
+                ? 'Database Awaiting Configuration'
+                : 'No shops registered yet'}
+            </h3>
+            <p className="text-xs text-[#A1ADA5] max-w-md mx-auto">
+              {searchedArea
+                ? `No registered stores currently match "${searchedArea}". Try checking the spelling or searching another locality like Velachery, Tambaram, or Perungudi.`
+                : !isSupabaseConfigured
+                ? 'Supabase credentials have not been configured yet in .env.local.'
+                : 'Enter your area or neighborhood above to discover registered local shops.'}
+            </p>
+            {searchedArea && (
+              <button
+                type="button"
+                onClick={handleClearArea}
+                className="inline-block px-4 py-2 bg-[#232E27] text-[#34D399] border border-[#303D34] rounded-xl text-xs font-bold hover:bg-[#1B241F] transition"
+              >
+                Clear Area Filter
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {matchingShops.slice(0, 6).map(({ shop, distanceKm }) => (
+              <div
+                key={shop.id}
+                className="bg-[#1B241F] rounded-2xl border border-[#303D34] p-5 shadow-lg hover:border-[#34D399]/40 transition flex flex-col justify-between group space-y-4"
+              >
+                <div>
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#132B1C] text-[#34D399] border border-[#245836]">
+                      {shop.category}
+                    </span>
+                    {distanceKm !== undefined && (
+                      <span className="text-[11px] text-[#A1ADA5]">{distanceKm} km away</span>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-[#F5F7F5] text-base group-hover:text-[#34D399] transition">
+                    <Link href={`/shops/${shop.id}`}>{shop.name}</Link>
+                  </h3>
+                  <p className="text-xs text-[#A1ADA5] line-clamp-2 mt-1">
+                    {shop.description || 'Verified local retailer.'}
+                  </p>
+                  <div className="pt-3 border-t border-[#303D34]/70 flex items-start gap-2 text-xs text-[#A1ADA5] mt-3">
+                    <MapPin className="w-3.5 h-3.5 text-[#22C55E] shrink-0 mt-0.5" />
+                    <span>{shop.address_line}, {shop.locality}, {shop.city}</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[#303D34] flex items-center justify-between gap-2">
+                  <Link
+                    href={`/shops/${shop.id}`}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#34D399] hover:underline"
+                  >
+                    <span>View Catalogue</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${shop.latitude},${shop.longitude}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 bg-[#232E27] hover:bg-[#303D34] text-[#F5F7F5] px-2.5 py-1 rounded-lg border border-[#303D34] text-xs font-semibold transition"
+                    title="Get Directions"
+                  >
+                    <Navigation className="w-3.5 h-3.5 text-[#22C55E]" />
+                    <span>Directions</span>
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Section: Live Available Products */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-[#F5F7F5] flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-[#22C55E]" />
-              <span>Available in Real Nearby Shops</span>
+              <span>
+                {searchedArea ? `Available In-Stock Products in ${searchedArea}` : 'Available Products in Local Shops'}
+              </span>
             </h2>
             <p className="text-xs text-[#A1ADA5]">
-              Real-time synchronized products within {radiusKm} km of {customerLocation.name}
+              Real-time synchronized products recorded by local store owners
             </p>
           </div>
 
           <Link
-            href="/search"
+            href={searchedArea ? `/search?area=${encodeURIComponent(searchedArea)}` : '/search'}
             className="text-xs font-bold text-[#34D399] hover:underline inline-flex items-center gap-1 self-start sm:self-auto"
           >
             <span>View All Products</span>
@@ -370,14 +522,18 @@ export default function CustomerLandingPage() {
           </div>
         ) : featuredProducts.length === 0 ? (
           <div className="bg-[#151C18] p-8 rounded-2xl border border-[#303D34] text-center space-y-3">
-            <Store className="w-10 h-10 text-[#A1ADA5] mx-auto" />
+            <ShoppingBag className="w-10 h-10 text-[#A1ADA5] mx-auto" />
             <h3 className="text-sm font-bold text-[#F5F7F5]">
-              {!isSupabaseConfigured ? 'Database Awaiting Configuration' : 'No listings in this radius'}
+              {searchedArea
+                ? 'No shops found in this area. Try another area.'
+                : !isSupabaseConfigured
+                ? 'Database Awaiting Configuration'
+                : 'No in-stock products found'}
             </h3>
             <p className="text-xs text-[#A1ADA5] max-w-md mx-auto">
-              {!isSupabaseConfigured
-                ? 'Supabase credentials have not been configured yet. Connect your Supabase database in .env.local to discover real nearby stores and stock.'
-                : `No registered shops have in-stock products within ${radiusKm} km of ${customerLocation.name}. Try expanding your search radius to 25 km or 50 km.`}
+              {searchedArea
+                ? `No products are currently available in "${searchedArea}". Try searching another area.`
+                : 'Products added by registered shopkeepers will appear here in real time.'}
             </p>
             <Link
               href="/search"
@@ -388,7 +544,7 @@ export default function CustomerLandingPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredProducts.map(({ product, shop, distanceKm }) => (
+            {featuredProducts.slice(0, 6).map(({ product, shop, distanceKm }) => (
               <div
                 key={`${product.id}-${shop.id}`}
                 className="bg-[#1B241F] rounded-2xl border border-[#303D34] overflow-hidden shadow-lg hover:border-[#34D399]/40 transition flex flex-col justify-between group"
@@ -408,12 +564,10 @@ export default function CustomerLandingPage() {
                       </div>
                     )}
 
-                    {distanceKm !== undefined && (
-                      <div className="absolute top-3 right-3 bg-[#101512]/90 backdrop-blur-md text-[#F5F7F5] text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1 border border-[#303D34] shadow">
-                        <Navigation className="w-3 h-3 text-[#34D399]" />
-                        <span>{distanceKm} km away</span>
-                      </div>
-                    )}
+                    <div className="absolute top-3 right-3 bg-[#101512]/90 backdrop-blur-md text-[#F5F7F5] text-[11px] font-semibold px-2.5 py-1 rounded-full flex items-center gap-1 border border-[#303D34] shadow">
+                      <MapPin className="w-3 h-3 text-[#34D399]" />
+                      <span>{shop.locality}</span>
+                    </div>
                   </div>
 
                   {/* Body */}

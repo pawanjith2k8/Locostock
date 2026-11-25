@@ -1,5 +1,5 @@
 import { Shop, Product, Invoice, StockMovement, Profile, ProductSearchResult } from '@/types';
-import { supabase, isSupabaseConfigured } from './supabaseClient';
+import { supabase, isSupabaseConfigured, getAuthRedirectUrl } from './supabaseClient';
 import { calculateHaversineDistanceKm } from './utils';
 
 // -------------------------------------------------------------
@@ -49,27 +49,29 @@ export async function getCurrentProfile(): Promise<Profile | null> {
 
 export async function sendShopkeeperOtp(email: string): Promise<{ success: boolean }> {
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase service is not configured yet. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.');
+    throw new Error('Authentication service is currently offline. Please verify network configuration.');
   }
+
+  const redirectUrl = getAuthRedirectUrl();
 
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { 
         shouldCreateUser: true,
-        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+        emailRedirectTo: redirectUrl,
       },
     });
 
     if (error) {
-      throw new Error(error.message || 'Failed to send OTP verification code.');
+      throw new Error(error.message || 'Failed to send verification email.');
     }
 
     return { success: true };
   } catch (err: any) {
+    console.error('Auth OTP dispatch error:', err);
     if (err.message === 'Failed to fetch' || err.name === 'TypeError' || (err.message && err.message.toLowerCase().includes('fetch'))) {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'the configured Supabase endpoint';
-      throw new Error(`Unable to connect to Supabase Auth service (${url}). The project host cannot be reached or is paused in the Supabase Dashboard. Please verify your Supabase project status.`);
+      throw new Error('Unable to connect to authentication server. Please check your internet connection or try again shortly.');
     }
     throw err;
   }
@@ -77,34 +79,47 @@ export async function sendShopkeeperOtp(email: string): Promise<{ success: boole
 
 export async function verifyShopkeeperOtp(email: string, token: string): Promise<{ success: boolean; profile: Profile }> {
   if (!isSupabaseConfigured || !supabase) {
-    throw new Error('Supabase service is not configured yet. Please configure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local.');
+    throw new Error('Authentication service is currently offline. Please verify network configuration.');
   }
 
   try {
-    const { data, error } = await supabase.auth.verifyOtp({
+    // Attempt verification with type 'email'
+    let res = await supabase.auth.verifyOtp({
       email,
       token,
       type: 'email',
     });
 
-    if (error) {
-      throw new Error(error.message || 'Invalid or expired verification code.');
+    // If type 'email' fails on a newly registered user, attempt type 'signup'
+    if (res.error && (res.error.message.toLowerCase().includes('type') || res.error.message.toLowerCase().includes('invalid'))) {
+      const signupRes = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: 'signup',
+      });
+      if (!signupRes.error) {
+        res = signupRes;
+      }
     }
-    if (!data.user) {
-      throw new Error('Verification failed: No authenticated user returned from Supabase.');
+
+    if (res.error) {
+      throw new Error(res.error.message || 'Invalid or expired verification code.');
+    }
+    if (!res.data.user) {
+      throw new Error('Verification failed: No authenticated user returned.');
     }
 
     let { data: profile } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', data.user.id)
+      .eq('id', res.data.user.id)
       .single();
 
     if (!profile) {
       const newProfile: Profile = {
-        id: data.user.id,
-        email: data.user.email || email,
-        full_name: data.user.user_metadata?.full_name || email.split('@')[0],
+        id: res.data.user.id,
+        email: res.data.user.email || email,
+        full_name: res.data.user.user_metadata?.full_name || email.split('@')[0],
         role: 'shopkeeper',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -116,7 +131,7 @@ export async function verifyShopkeeperOtp(email: string, token: string): Promise
         .single();
 
       if (insertError) {
-        console.warn('Could not auto-create profile row (schema may be unmigrated):', insertError.message);
+        console.warn('Could not auto-create profile row:', insertError.message);
         profile = newProfile;
       } else {
         profile = inserted;
@@ -125,9 +140,9 @@ export async function verifyShopkeeperOtp(email: string, token: string): Promise
 
     return { success: true, profile };
   } catch (err: any) {
-    if (err.message === 'Failed to fetch' || err.name === 'TypeError' || (err.message && err.message.toLowerCase().includes('fetch'))) {
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'the configured Supabase endpoint';
-      throw new Error(`Unable to reach Supabase Auth (${url}). The project host is unreachable or paused.`);
+    console.error('OTP verification error:', err);
+    if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+      throw new Error('Unable to reach authentication server. Please check your network connection.');
     }
     throw err;
   }
@@ -513,6 +528,7 @@ export async function getInvoicesByShop(shopId: string): Promise<Invoice[]> {
 export interface ProductSearchParams {
   query?: string;
   category?: string;
+  area?: string;
   customerLat?: number;
   customerLon?: number;
   radiusKm?: number;
@@ -544,9 +560,22 @@ export async function searchProducts(params: ProductSearchParams): Promise<Produ
 
   const products: Product[] = data;
   const q = (params.query || '').trim().toLowerCase();
+  const areaQuery = (params.area || '').trim().toLowerCase();
 
   let results = products
     .filter(prod => {
+      const shop = shopMap.get(prod.shop_id);
+      if (!shop) return false;
+
+      // Area-based filtering: Match shop locality or city
+      if (areaQuery) {
+        const shopLoc = (shop.locality || '').toLowerCase().trim();
+        const shopCity = (shop.city || '').toLowerCase().trim();
+        const matchLoc = shopLoc.includes(areaQuery) || areaQuery.includes(shopLoc);
+        const matchCity = shopCity.includes(areaQuery) || areaQuery.includes(shopCity);
+        if (!matchLoc && !matchCity) return false;
+      }
+
       if (q) {
         const matchName = prod.name.toLowerCase().includes(q);
         const matchBrand = (prod.brand || '').toLowerCase().includes(q);
@@ -608,6 +637,7 @@ export async function searchProducts(params: ProductSearchParams): Promise<Produ
 export async function searchShops(params: {
   query?: string;
   category?: string;
+  area?: string;
   customerLat?: number;
   customerLon?: number;
   radiusKm?: number;
@@ -618,8 +648,18 @@ export async function searchShops(params: {
 
   const allShops = await getAllShops();
   const q = (params.query || '').trim().toLowerCase();
+  const areaQuery = (params.area || '').trim().toLowerCase();
 
   let results = allShops.filter(shop => {
+    // Area-based filtering: Match shop locality or city
+    if (areaQuery) {
+      const shopLoc = (shop.locality || '').toLowerCase().trim();
+      const shopCity = (shop.city || '').toLowerCase().trim();
+      const matchLoc = shopLoc.includes(areaQuery) || areaQuery.includes(shopLoc);
+      const matchCity = shopCity.includes(areaQuery) || areaQuery.includes(shopCity);
+      if (!matchLoc && !matchCity) return false;
+    }
+
     if (q) {
       const matchName = shop.name.toLowerCase().includes(q);
       const matchCat = shop.category.toLowerCase().includes(q);

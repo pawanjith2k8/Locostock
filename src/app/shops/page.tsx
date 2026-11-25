@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
   Store, 
@@ -9,11 +10,10 @@ import {
   Clock, 
   Navigation, 
   Search, 
-  SlidersHorizontal,
-  ChevronRight,
-  ShieldCheck,
-  Building,
-  Map as MapIcon
+  ChevronRight, 
+  Building, 
+  Map as MapIcon,
+  X
 } from 'lucide-react';
 import { useUser } from '@/context/UserContext';
 import { searchShops } from '@/lib/db';
@@ -21,24 +21,35 @@ import { isSupabaseConfigured } from '@/lib/supabaseClient';
 import { Shop } from '@/types';
 import LeafletMap from '@/components/LeafletMap';
 
-export default function ShopsDirectoryPage() {
-  const { customerLocation, radiusKm, setRadiusKm } = useUser();
+function ShopsDirectoryContent() {
+  const searchParams = useSearchParams();
+  const areaParam = searchParams.get('area') || '';
+
+  const { customerArea, setCustomerArea } = useUser();
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('');
+  const [area, setArea] = useState(areaParam || customerArea || '');
   const [shops, setShops] = useState<Array<{ shop: Shop; distanceKm?: number }>>([]);
   const [loading, setLoading] = useState(true);
   const [showMap, setShowMap] = useState(false);
 
   useEffect(() => {
+    if (areaParam !== undefined && areaParam !== '') {
+      setArea(areaParam);
+    }
+  }, [areaParam]);
+
+  useEffect(() => {
     async function loadShops() {
       setLoading(true);
+      if (area.trim() && area.trim() !== customerArea) {
+        setCustomerArea(area.trim());
+      }
       try {
         const results = await searchShops({
           query,
           category: category || undefined,
-          customerLat: customerLocation.lat,
-          customerLon: customerLocation.lon,
-          radiusKm,
+          area: area.trim() || undefined,
         });
         setShops(results);
       } catch (err) {
@@ -48,7 +59,7 @@ export default function ShopsDirectoryPage() {
       }
     }
     loadShops();
-  }, [query, category, customerLocation, radiusKm]);
+  }, [query, category, area]);
 
   const mapMarkers = shops.map(s => ({
     lat: s.shop.latitude,
@@ -70,8 +81,14 @@ export default function ShopsDirectoryPage() {
               <span>Verified Local Shops</span>
             </h1>
             <p className="text-xs text-[#A1ADA5]">
-              Browse public profiles, opening hours, contact details, and catalogues near{' '}
-              <span className="font-semibold text-[#F5F7F5]">{customerLocation.name}</span>
+              {area ? (
+                <>
+                  Showing verified neighborhood retailers operating in{' '}
+                  <span className="font-bold text-[#34D399]">{area}</span>
+                </>
+              ) : (
+                'Browse public profiles, opening hours, contact details, and catalogues across neighborhoods'
+              )}
             </p>
           </div>
 
@@ -84,20 +101,44 @@ export default function ShopsDirectoryPage() {
           </button>
         </div>
 
-        {/* Filter bar */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
-          <div className="relative">
+        {/* Filter bar: Query, Area, Category */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-2">
+          {/* Shop name or keyword */}
+          <div className="md:col-span-5 relative">
             <Search className="w-4 h-4 text-[#A1ADA5] absolute left-3.5 top-3.5" />
             <input
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search shops by name, locality..."
+              placeholder="Search shops by name..."
               className="w-full pl-10 pr-4 py-2.5 bg-[#1B241F] border border-[#303D34] rounded-xl text-xs sm:text-sm font-medium text-[#F5F7F5] placeholder-[#A1ADA5]/60 outline-none focus:border-[#34D399] transition"
             />
           </div>
 
-          <div>
+          {/* Manual Area filter */}
+          <div className="md:col-span-4 relative">
+            <MapPin className="w-4 h-4 text-[#22C55E] absolute left-3.5 top-3.5" />
+            <input
+              type="text"
+              value={area}
+              onChange={e => setArea(e.target.value)}
+              placeholder="Filter by area (e.g. Tambaram)..."
+              className="w-full pl-10 pr-8 py-2.5 bg-[#1B241F] border border-[#303D34] rounded-xl text-xs sm:text-sm font-medium text-[#F5F7F5] placeholder-[#A1ADA5]/60 outline-none focus:border-[#34D399] transition"
+            />
+            {area && (
+              <button
+                type="button"
+                onClick={() => setArea('')}
+                className="absolute right-2.5 top-3 text-[#A1ADA5] hover:text-[#F5F7F5]"
+                title="Clear area filter"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Category filter */}
+          <div className="md:col-span-3">
             <select
               value={category}
               onChange={e => setCategory(e.target.value)}
@@ -111,21 +152,6 @@ export default function ShopsDirectoryPage() {
               ))}
             </select>
           </div>
-
-          <div className="flex items-center gap-2 text-xs text-[#A1ADA5] bg-[#1B241F] px-3 py-2.5 rounded-xl border border-[#303D34]">
-            <SlidersHorizontal className="w-4 h-4 text-[#22C55E]" />
-            <span>Radius:</span>
-            <select
-              value={radiusKm}
-              onChange={e => setRadiusKm(Number(e.target.value))}
-              className="bg-transparent font-bold text-[#34D399] outline-none cursor-pointer text-xs"
-            >
-              <option value={5} className="bg-[#1B241F] text-[#F5F7F5]">Within 5 km</option>
-              <option value={10} className="bg-[#1B241F] text-[#F5F7F5]">Within 10 km</option>
-              <option value={25} className="bg-[#1B241F] text-[#F5F7F5]">Within 25 km</option>
-              <option value={50} className="bg-[#1B241F] text-[#F5F7F5]">Within 50 km</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -133,8 +159,8 @@ export default function ShopsDirectoryPage() {
       {showMap && (
         <div className="bg-[#151C18] p-4 rounded-3xl border border-[#303D34] shadow-xl space-y-2">
           <LeafletMap
-            center={[customerLocation.lat, customerLocation.lon]}
-            zoom={13}
+            center={[12.9759, 80.2212]}
+            zoom={12}
             markers={mapMarkers}
             height="420px"
           />
@@ -148,13 +174,31 @@ export default function ShopsDirectoryPage() {
         <div className="bg-[#151C18] p-12 rounded-3xl border border-[#303D34] text-center space-y-3">
           <Building className="w-12 h-12 text-[#A1ADA5] mx-auto" />
           <h3 className="text-base font-bold text-[#F5F7F5]">
-            {!isSupabaseConfigured ? 'Database Awaiting Configuration' : 'No shops found in this area'}
+            {!isSupabaseConfigured
+              ? 'Database Awaiting Configuration'
+              : area
+              ? 'No shops found in this area. Try another area.'
+              : 'No shops found'}
           </h3>
           <p className="text-xs text-[#A1ADA5] max-w-sm mx-auto">
             {!isSupabaseConfigured
               ? 'Supabase database credentials have not been configured in .env.local yet. Once configured, registered local shops will appear here.'
-              : `No registered shops matched your criteria within ${radiusKm} km. Try expanding the search radius.`}
+              : area
+              ? `No registered stores match "${area}". Try another locality like Tambaram, Velachery, or Perungudi.`
+              : 'No registered shops match your search criteria. Try clearing your query or filters.'}
           </p>
+          {area && (
+            <button
+              onClick={() => {
+                setQuery('');
+                setCategory('');
+                setArea('');
+              }}
+              className="px-4 py-2 bg-[#22C55E] text-[#101512] rounded-xl text-xs font-bold hover:bg-[#16A34A] transition"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -183,7 +227,7 @@ export default function ShopsDirectoryPage() {
                 </div>
 
                 <p className="text-xs text-[#A1ADA5] line-clamp-2 leading-relaxed">
-                  {shop.description}
+                  {shop.description || 'Verified local neighborhood retailer.'}
                 </p>
 
                 <div className="space-y-2 text-xs text-[#A1ADA5] pt-3 border-t border-[#303D34]">
@@ -233,5 +277,13 @@ export default function ShopsDirectoryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ShopsDirectoryPage() {
+  return (
+    <Suspense fallback={<div className="p-16 text-center text-[#A1ADA5] text-xs">Loading shops directory...</div>}>
+      <ShopsDirectoryContent />
+    </Suspense>
   );
 }
