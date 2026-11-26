@@ -26,12 +26,20 @@ function CallbackContent() {
         return;
       }
 
-      // Check for error in query parameters
-      const error = searchParams.get('error');
-      const errorDescription = searchParams.get('error_description');
+      // Check for error in query parameters or hash fragment
+      let error = searchParams.get('error');
+      let errorDescription = searchParams.get('error_description');
+
+      // Supabase often appends error details to the URL hash fragment (#error=...&error_description=...)
+      if (!error && typeof window !== 'undefined' && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        error = hashParams.get('error');
+        errorDescription = hashParams.get('error_description');
+      }
+
       if (error) {
         setStatus('error');
-        setErrorMsg(errorDescription || error || 'Authentication link failed or expired.');
+        setErrorMsg(errorDescription || error || 'Authentication link failed or has expired.');
         return;
       }
 
@@ -121,13 +129,18 @@ function CallbackContent() {
             }
           });
 
-          // Timeout fallback if no session is detected after 6 seconds
+          // Timeout fallback if no session is detected after 5 seconds
           setTimeout(() => {
-            if (isMounted && status === 'verifying') {
-              setStatus('error');
-              setErrorMsg('Verification link expired or already used. Please request a new verification email.');
+            if (isMounted) {
+              setStatus(prev => {
+                if (prev === 'verifying') {
+                  setErrorMsg('Verification link expired or already used. Please request a new verification email.');
+                  return 'error';
+                }
+                return prev;
+              });
             }
-          }, 6000);
+          }, 5000);
         }
       } catch (err: any) {
         if (!isMounted) return;
@@ -141,7 +154,7 @@ function CallbackContent() {
     return () => {
       isMounted = false;
     };
-  }, [router, searchParams, refreshProfile, switchRole, status]);
+  }, [router, searchParams, refreshProfile, switchRole]);
 
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-12">

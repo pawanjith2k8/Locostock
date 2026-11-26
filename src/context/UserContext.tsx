@@ -40,6 +40,24 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   const [customerLocation, setCustomerLocation] = useState(PRESET_LOCATIONS[0]);
   const [radiusKm, setRadiusKm] = useState<number>(10);
 
+  // If an auth redirect lands on any route other than /auth/callback (e.g. root Site URL),
+  // forward the fragment or query params to /auth/callback so the merchant session is established.
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.pathname !== '/auth/callback') {
+      const hasAuthHash = window.location.hash && (
+        window.location.hash.includes('access_token=') ||
+        window.location.hash.includes('error=')
+      );
+      const hasAuthQuery = window.location.search && (
+        window.location.search.includes('code=') ||
+        window.location.search.includes('token_hash=')
+      );
+      if (hasAuthHash || hasAuthQuery) {
+        window.location.replace('/auth/callback' + window.location.search + window.location.hash);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const savedArea = typeof window !== 'undefined' ? localStorage.getItem('locostock_customer_area') : null;
